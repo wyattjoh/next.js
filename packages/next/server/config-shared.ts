@@ -181,6 +181,10 @@ export interface ExperimentalConfig {
     processCwd?: string
     maxFiles?: number
   }
+  
+  trace?: {
+    serviceName: string
+  }
 }
 
 export type ExportPathMap = {

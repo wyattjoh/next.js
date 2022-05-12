@@ -12,6 +12,7 @@ import { PHASE_PRODUCTION_SERVER } from '../shared/lib/constants'
 import { IncomingMessage, ServerResponse } from 'http'
 import { NextUrlWithParsedQuery } from './request-meta'
 import { shouldUseReactRoot } from './utils'
+import { initializeTraceOnce } from './lib/trace/initialize-trace-once'
 import {
   loadRequireHook,
   overrideBuiltInReactPackages,
@@ -151,6 +152,11 @@ export class NextServer {
   private async getServer() {
     if (!this.serverPromise) {
       this.serverPromise = this.loadConfig().then(async (conf) => {
+        // Initialize trace as soon as we are able to read options to configure traces.
+        // Since this is an entrypoint to the trace collection, any attempt to write trace
+        // prior to this will be silently ignored.
+        initializeTraceOnce(conf?.experimental?.trace)
+	
         if (conf.experimental.appDir) {
           process.env.NEXT_PREBUNDLED_REACT = '1'
           overrideBuiltInReactPackages()
