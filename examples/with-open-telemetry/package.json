@@ -1,0 +1,15 @@
+{
+  "name": "with-open-telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "collector": "docker run --rm --name datadog -p 4318:4318 -e DD_API_KEY=$DD_API_KEY -v $(pwd)/otel-config.yaml:/etc/otelcol-contrib/config.yaml --hostname $(hostname) otel/opentelemetry-collector-contrib:0.59.0"
+  },
+  "dependencies": {
+    "winston": "3.8.1"
+  }
+}
