@@ -2,10 +2,15 @@ import { warn } from '../../../build/output/log'
 import { SpanProcessorConfig, TraceConfig } from './trace-config'
 import { configureTracer } from './tracer'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
+import * as Log from '../../../build/output/log'
 
 const {
+  diag,
+  DiagLogLevel,
+}: typeof import('@opentelemetry/api') = require('next/dist/compiled/@opentelemetry/api')
+const {
   OTLPTraceExporter,
-}: typeof import('@opentelemetry/exporter-trace-otlp-grpc') = require('next/dist/compiled/@opentelemetry/exporter-trace-otlp-grpc')
+}: typeof import('@opentelemetry/exporter-trace-otlp-http') = require('next/dist/compiled/@opentelemetry/exporter-trace-otlp-http')
 
 /**
  * Options to create exporter to collector using otlp-grpc.
@@ -79,6 +84,17 @@ export const initializeTraceOnce = (() => {
       return
     }
 
+    diag.setLogger(
+      {
+        error: Log.error.bind(Log),
+        warn: Log.warn.bind(Log),
+        info: Log.info.bind(Log),
+        debug: Log.info.bind(Log),
+        verbose: Log.trace.bind(Log),
+      },
+      DiagLogLevel.ERROR
+    )
+
     provider = new NodeTracerProvider({
       resource: new Resource({
         [SemanticResourceAttributes.SERVICE_NAME]: config.serviceName,
@@ -98,6 +114,7 @@ export const initializeTraceOnce = (() => {
     const exporter = !!config?.debug
       ? new ConsoleSpanExporter()
       : new OTLPTraceExporter(collectorOptions)
+
     provider.addSpanProcessor(
       buildSpanProcessor(
         config.spanProcessorConfig ?? { processorType: 'simple' },
@@ -105,6 +122,8 @@ export const initializeTraceOnce = (() => {
       )
     )
 
+    // This'll internally register provider as global,
+    // allows app can acquire it from global registry to insert spans connected with current provider.
     provider.register()
     configureTracer({ provider, ...config })
 
