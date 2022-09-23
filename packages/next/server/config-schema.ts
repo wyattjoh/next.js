@@ -465,6 +465,9 @@ const configSchema = {
             },
           },
         },
+        trace: {
+          type: 'object',
+        },
       },
       type: 'object',
     },
