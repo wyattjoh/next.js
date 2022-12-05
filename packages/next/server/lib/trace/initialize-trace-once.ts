@@ -3,6 +3,7 @@ import { SpanProcessorConfig, TraceConfig } from './trace-config'
 import { configureTracer } from './tracer'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
 import * as Log from '../../../build/output/log'
+import { patchConsole } from '../../../trace/log/console'
 
 const {
   diag,
@@ -82,6 +83,14 @@ export const initializeTraceOnce = (() => {
     if (!!provider) {
       warn('Trace provider is already initialized')
       return
+    }
+
+    // Patch the console if the logging options are configured.
+    if (config.logging?.httpTransportURL) {
+      patchConsole({
+        maxBatchSize: config.logging.maxBatchSize,
+        httpTransportURL: config.logging.httpTransportURL,
+      })
     }
 
     diag.setLogger(

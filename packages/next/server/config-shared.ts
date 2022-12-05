@@ -184,6 +184,25 @@ export interface ExperimentalConfig {
 
   trace?: {
     serviceName: string
+
+    /**
+     * Patch the Console API to automatically send log lines emitted using it to
+     * the OpenTelemetry endpoint via JSON-HTTP. This isn't required if you're
+     * using a third party logging library.
+     */
+    logging?: {
+      /**
+       * The maximum number of log items to collect before flushing. When logs are
+       * being emitted, if this maximum is reached before the logs are scheduled to
+       * be sent, it will be sent immediately.
+       */
+      maxBatchSize?: number
+
+      /**
+       * The URL for which the log lines will be sent to via JSON encoded HTTP-POST.
+       */
+      httpTransportURL?: string
+    }
   }
 }
 
