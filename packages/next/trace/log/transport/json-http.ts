@@ -5,6 +5,20 @@ import https from 'https'
 import { LogRecord } from '../types'
 
 /**
+ * LogsData is the data structure accepted by the OTEL collector via the HTTP
+ * receiver. This structure was reverse engineered from the source code.
+ *
+ * @see {@link https://github.com/open-telemetry/opentelemetry-collector/blob/fdc80a3bea75be80b2fc5be5c755377c93d2acd6/pdata/internal/data/protogen/logs/v1/logs.pb.go}
+ */
+interface LogsData {
+  resourceLogs: {
+    scopeLogs: {
+      logRecords: LogRecord[]
+    }[]
+  }[]
+}
+
+/**
  * The JSONHTTPTransport will send HTTP POST requests with the log records as
  * JSON.
  */
@@ -44,7 +58,12 @@ export class JSONHTTPTransport implements Transport {
     }
   }
 
-  send(records: LogRecord[]): Promise<void> {
-    return this._send(JSON.stringify(records))
+  send(logRecords: LogRecord[]): Promise<void> {
+    // format the log records into the correct format.
+    const data: LogsData = {
+      resourceLogs: [{ scopeLogs: [{ logRecords }] }],
+    }
+
+    return this._send(JSON.stringify(data))
   }
 }

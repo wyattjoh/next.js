@@ -34,9 +34,11 @@ export class LogRecordCollector {
   }
 
   private format(body: string): LogRecord {
-    const timestamp = Date.now()
+    // Convert the timestamp in milliseconds to nanoseconds as expected by the
+    // OTEL collector.
+    const timeUnixNano = Date.now() * 1e6
 
-    const packet: LogRecord = { timestamp, body }
+    const packet: LogRecord = { timeUnixNano, body: { string_value: body } }
 
     // Get the active span. If we're not in one, then just return the packet
     // without any span details.
