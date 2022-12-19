@@ -26,7 +26,7 @@ type PatchConsoleOptions = {
   /**
    * The URL for which the log lines will be sent to via JSON encoded HTTP-POST.
    */
-  httpTransportURL: string
+  httpTransportURL?: string
 }
 
 export function patchConsole({

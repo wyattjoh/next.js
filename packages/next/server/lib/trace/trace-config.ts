@@ -12,6 +12,12 @@ type SpanProcessorConfig =
 
 interface LoggingConfig {
   /**
+   * When true, this enables automatic patching of the Console API to send
+   * messages over to the configured OpenTelemetry endpoint.
+   */
+  patchConsole?: boolean
+
+  /**
    * The maximum number of log items to collect before flushing. When logs are
    * being emitted, if this maximum is reached before the logs are scheduled to
    * be sent, it will be sent immediately.

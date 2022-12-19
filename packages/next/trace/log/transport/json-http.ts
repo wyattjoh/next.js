@@ -4,6 +4,11 @@ import http from 'http'
 import https from 'https'
 import { LogRecord } from '../types'
 
+const {
+  appendResourcePathToUrl,
+  appendRootPathToUrlIfNeeded,
+}: typeof import('@opentelemetry/otlp-exporter-base') = require('next/dist/compiled/@opentelemetry/otlp-exporter-base')
+
 /**
  * LogsData is the data structure accepted by the OTEL collector via the HTTP
  * receiver. This structure was reverse engineered from the source code.
@@ -18,16 +23,58 @@ interface LogsData {
   }[]
 }
 
+const DEFAULT_COLLECTOR_RESOURCE_PATH = 'v1/logs'
+const DEFAULT_COLLECTOR_URL = `http://localhost:4318/${DEFAULT_COLLECTOR_RESOURCE_PATH}`
+
+/**
+ * Detects the url to send OpenTelemetry logs to based on the environment
+ * variables. This is based around the implementation for traces.
+ *
+ * @see {@link https://github.com/open-telemetry/opentelemetry-js/blob/369b07e1c7483556fa9da952ba27c2e2828ecefb/experimental/packages/exporter-trace-otlp-http/src/platform/node/OTLPTraceExporter.ts#L54-L65}
+ *
+ * @returns the url to send OpenTelemetry logs to.
+ */
+function getURL(url?: string): string {
+  if (typeof url === 'string' && url.length > 0) {
+    return url
+  }
+
+  if (
+    process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT &&
+    process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT.length > 0
+  ) {
+    return appendRootPathToUrlIfNeeded(
+      process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+      ''
+    )
+  }
+
+  if (
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT &&
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT.length > 0
+  ) {
+    return appendResourcePathToUrl(
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+      DEFAULT_COLLECTOR_RESOURCE_PATH
+    )
+  }
+
+  return DEFAULT_COLLECTOR_URL
+}
+
 /**
  * The JSONHTTPTransport will send HTTP POST requests with the log records as
  * JSON.
  */
 export class JSONHTTPTransport implements Transport {
+  private readonly url: string
   private readonly agent: http.Agent | https.Agent
 
-  constructor(private readonly url: string, private readonly maxAttempts = 3) {
+  constructor(url?: string, private readonly maxAttempts = 3) {
+    this.url = getURL(url)
+
     // Configure the http(s) agent so we can re-use the connection.
-    this.agent = url.startsWith('https://')
+    this.agent = this.url.startsWith('https://')
       ? new https.Agent({ keepAlive: true })
       : new http.Agent({ keepAlive: true })
   }

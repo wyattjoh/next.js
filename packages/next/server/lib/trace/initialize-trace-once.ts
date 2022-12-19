@@ -86,7 +86,7 @@ export const initializeTraceOnce = (() => {
     }
 
     // Patch the console if the logging options are configured.
-    if (config.logging?.httpTransportURL) {
+    if (config.logging?.patchConsole) {
       patchConsole({
         maxBatchSize: config.logging.maxBatchSize,
         httpTransportURL: config.logging.httpTransportURL,
