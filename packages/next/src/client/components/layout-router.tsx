@@ -24,6 +24,7 @@ import { createInfinitePromise } from './infinite-promise'
 import { ErrorBoundary } from './error-boundary'
 import { matchSegment } from './match-segments'
 import { useRouter } from './navigation'
+import { getURLFromRedirectError } from './redirect'
 
 /**
  * Add refetch marker to router state at the point of the current layout segment.
@@ -357,12 +358,12 @@ class RedirectErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError(error: any) {
-    if (error?.digest?.startsWith('NEXT_REDIRECT')) {
-      const url = error.digest.split(';')[1]
-      return { redirect: url }
-    }
+    const url = getURLFromRedirectError(error)
+
     // Re-throw if error is not for redirect
-    throw error
+    if (!url) throw error
+
+    return { redirect: url }
   }
 
   render() {
