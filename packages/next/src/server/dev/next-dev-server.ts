@@ -38,7 +38,7 @@ import { getRouteMatcher } from '../../shared/lib/router/utils/route-matcher'
 import { getMiddlewareRouteMatcher } from '../../shared/lib/router/utils/middleware-route-matcher'
 import { normalizePagePath } from '../../shared/lib/page-path/normalize-page-path'
 import { absolutePathToPage } from '../../shared/lib/page-path/absolute-path-to-page'
-import Router from '../router'
+import Router, { RouteResult } from '../router'
 import { getPathMatch } from '../../shared/lib/router/utils/path-match'
 import { pathHasPrefix } from '../../shared/lib/router/utils/path-has-prefix'
 import { removePathPrefix } from '../../shared/lib/router/utils/remove-path-prefix'
@@ -77,6 +77,7 @@ import {
 import { getDefineEnv } from '../../build/webpack-config'
 import loadJsConfig from '../../build/load-jsconfig'
 import { formatServerError } from '../../lib/format-server-error'
+import { FetchEventResult } from '../web/types'
 
 // Load ReactDevOverlay only when needed
 let ReactDevOverlayImpl: FunctionComponent
@@ -246,9 +247,7 @@ export default class DevServer extends Server {
             const mergedQuery = { ...urlQuery, ...query }
 
             await this.render(req, res, page, mergedQuery, parsedUrl, true)
-            return {
-              finished: true,
-            }
+            return { state: 'finished' }
           },
         })
       }
@@ -908,7 +907,7 @@ export default class DevServer extends Server {
     parsedUrl: ParsedUrl
     parsed: UrlWithParsedQuery
     middlewareList: MiddlewareRoutingItem[]
-  }) {
+  }): Promise<FetchEventResult | RouteResult> {
     try {
       const result = await super.runMiddleware({
         ...params,
@@ -917,7 +916,7 @@ export default class DevServer extends Server {
         },
       })
 
-      if ('finished' in result) {
+      if ('state' in result) {
         return result
       }
 
@@ -952,12 +951,12 @@ export default class DevServer extends Server {
         request.url.includes('/_next/static') ||
         request.url.includes('/__nextjs_original-stack-frame')
       ) {
-        return { finished: false }
+        return { state: 'continue' }
       }
 
       response.statusCode = 500
       this.renderError(err, request, response, parsedUrl.pathname)
-      return { finished: true }
+      return { state: 'finished' }
     }
   }
 
@@ -1231,9 +1230,7 @@ export default class DevServer extends Server {
       fn: async (req, res, params) => {
         const p = pathJoin(this.distDir, ...(params.path || []))
         await this.serveStatic(req, res, p)
-        return {
-          finished: true,
-        }
+        return { state: 'finished' }
       },
     })
 
@@ -1255,9 +1252,7 @@ export default class DevServer extends Server {
             })
           )
           .send()
-        return {
-          finished: true,
-        }
+        return { state: 'finished' }
       },
     })
 
@@ -1271,9 +1266,7 @@ export default class DevServer extends Server {
         res.statusCode = 200
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         res.body(JSON.stringify(this.getMiddleware()?.matchers ?? [])).send()
-        return {
-          finished: true,
-        }
+        return { state: 'finished' }
       },
     })
 
@@ -1289,14 +1282,10 @@ export default class DevServer extends Server {
 
         // Used in development to check public directory paths
         if (await this._beforeCatchAllRender(req, res, params, parsedUrl)) {
-          return {
-            finished: true,
-          }
+          return { state: 'finished' }
         }
 
-        return {
-          finished: false,
-        }
+        return { state: 'continue' }
       },
     })
 

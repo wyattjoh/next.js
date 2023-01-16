@@ -58,7 +58,7 @@ export function getCustomRoute(params: {
     type,
     match,
     name: type,
-    fn: async (_req, _res, _params, _parsedUrl) => ({ finished: false }),
+    fn: async (_req, _res, _params, _parsedUrl) => ({ state: 'continue' }),
   }
 }
 
@@ -93,7 +93,7 @@ export const createHeaderRoute = ({
         }
         res.setHeader(key, value)
       }
-      return { finished: false }
+      return { state: 'continue' }
     },
   }
 }
@@ -173,7 +173,7 @@ export const createRedirectRoute = ({
         .send()
 
       return {
-        finished: true,
+        state: 'finished',
       }
     },
   }
