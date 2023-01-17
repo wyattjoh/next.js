@@ -38,7 +38,7 @@ import { getRouteMatcher } from '../../shared/lib/router/utils/route-matcher'
 import { getMiddlewareRouteMatcher } from '../../shared/lib/router/utils/middleware-route-matcher'
 import { normalizePagePath } from '../../shared/lib/page-path/normalize-page-path'
 import { absolutePathToPage } from '../../shared/lib/page-path/absolute-path-to-page'
-import Router, { RouteResult, RouteResultState } from '../router'
+import Router, { RouteResult, RouteResultState, RouterOptions } from '../router'
 import { getPathMatch } from '../../shared/lib/router/utils/path-match'
 import { pathHasPrefix } from '../../shared/lib/router/utils/path-has-prefix'
 import { removePathPrefix } from '../../shared/lib/router/utils/remove-path-prefix'
@@ -706,7 +706,7 @@ export default class DevServer extends Server {
       redirects.length ||
       headers.length
     ) {
-      this.router = new Router(this.generateRoutes())
+      this.router = new Router(this.generateRouteOptions())
     }
 
     this.hotReloader = new HotReloader(this.dir, {
@@ -1218,12 +1218,12 @@ export default class DevServer extends Server {
     return this.hotReloader!.ensurePage({ page, appPaths, clientOnly: false })
   }
 
-  generateRoutes() {
-    const { fsRoutes, ...otherRoutes } = super.generateRoutes()
+  generateRouteOptions(): RouterOptions {
+    const options = super.generateRouteOptions()
 
     // In development we expose all compiled files for react-error-overlay's line show feature
     // We use unshift so that we're sure the routes is defined before Next's default routes
-    fsRoutes.unshift({
+    options.routes.fs.unshift({
       match: getPathMatch('/_next/development/:path*'),
       type: 'route',
       name: '_next/development catchall',
@@ -1234,7 +1234,7 @@ export default class DevServer extends Server {
       },
     })
 
-    fsRoutes.unshift({
+    options.routes.fs.unshift({
       match: getPathMatch(
         `/_next/${CLIENT_STATIC_FILES_PATH}/${this.buildId}/${DEV_CLIENT_PAGES_MANIFEST}`
       ),
@@ -1256,7 +1256,7 @@ export default class DevServer extends Server {
       },
     })
 
-    fsRoutes.unshift({
+    options.routes.fs.unshift({
       match: getPathMatch(
         `/_next/${CLIENT_STATIC_FILES_PATH}/${this.buildId}/${DEV_MIDDLEWARE_MANIFEST}`
       ),
@@ -1270,7 +1270,7 @@ export default class DevServer extends Server {
       },
     })
 
-    fsRoutes.push({
+    options.routes.fs.push({
       match: getPathMatch('/:path*'),
       type: 'route',
       name: 'catchall public directory route',
@@ -1289,7 +1289,7 @@ export default class DevServer extends Server {
       },
     })
 
-    return { fsRoutes, ...otherRoutes }
+    return options
   }
 
   // In development public files are not added to the router but handled as a fallback instead
