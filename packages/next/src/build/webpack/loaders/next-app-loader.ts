@@ -8,6 +8,7 @@ import { verifyRootLayout } from '../../../lib/verifyRootLayout'
 import * as Log from '../../../build/output/log'
 import { APP_DIR_ALIAS } from '../../../lib/constants'
 import { resolveFileBasedMetadataForLoader } from '../../../lib/metadata/resolve-metadata'
+import { isCustomAppRoute } from '../../../lib/is-custom-app-route'
 
 const FILE_TYPES = {
   layout: 'layout',
@@ -221,9 +222,9 @@ async function createCustomAppRouteCode({
 
   return `
     import 'next/dist/server/node-polyfill-headers'
-
-    export * as handlers from ${JSON.stringify(resolvedPagePath)}
     
+    export * as handlers from ${JSON.stringify(resolvedPagePath)}
+
     export { requestAsyncStorage } from 'next/dist/client/components/request-async-storage'
   `
 }
@@ -262,9 +263,6 @@ const nextAppLoader: webpack.LoaderDefinitionFunction<{
   }
   const resolve = this.getResolve(resolveOptions)
 
-  const normalizedAppPaths =
-    typeof appPaths === 'string' ? [appPaths] : appPaths || []
-
   const resolver: PathResolver = async (pathname, resolveDir) => {
     if (resolveDir) {
       return createAbsolutePath(appDir, pathname)
@@ -287,9 +285,12 @@ const nextAppLoader: webpack.LoaderDefinitionFunction<{
     }
   }
 
-  if (name.endsWith('/route')) {
+  if (isCustomAppRoute(name)) {
     return createCustomAppRouteCode({ pagePath, resolver })
   }
+
+  const normalizedAppPaths =
+    typeof appPaths === 'string' ? [appPaths] : appPaths || []
 
   const resolveParallelSegments = (pathname: string) => {
     const matched: Record<string, string> = {}
