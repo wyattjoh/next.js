@@ -3,7 +3,7 @@ import type { CustomRoutes } from '../lib/load-custom-routes'
 import type { DomainLocale } from './config'
 import type { DynamicRoutes, RouterOptions } from './router'
 import type { FontManifest, FontConfig } from './font-utils'
-import type { LoadComponentsReturnType } from './load-components'
+import { LoadedComponents, LOADED_COMPONENT_TYPE } from './load-components'
 import type { RouteMatch } from '../shared/lib/router/utils/route-matcher'
 import type { MiddlewareRouteMatch } from '../shared/lib/router/utils/middleware-route-matcher'
 import type { Params } from '../shared/lib/router/utils/route-matcher'
@@ -84,8 +84,9 @@ import {
 import { isCustomAppRoutePathname } from '../lib/is-custom-app-route'
 
 export type FindComponentsResult = {
-  components: LoadComponentsReturnType
+  components: LoadedComponents
   query: NextParsedUrlQuery
+  pathname: string
 }
 
 export interface RoutingItem {
@@ -850,15 +851,19 @@ export default abstract class Server<ServerOptions extends Options = Options> {
   }
 
   protected getAppPathRoutes(): Record<string, string[]> {
+    if (!this.appPathsManifest) return {}
+
     const appPathRoutes: Record<string, string[]> = {}
 
-    Object.keys(this.appPathsManifest || {}).forEach((entry) => {
-      const normalizedPath = normalizeAppPath(entry) || '/'
-      if (!appPathRoutes[normalizedPath]) {
-        appPathRoutes[normalizedPath] = []
+    for (const entry of Object.keys(this.appPathsManifest)) {
+      const normalized = normalizeAppPath(entry) || '/'
+      if (!appPathRoutes[normalized]) {
+        appPathRoutes[normalized] = []
       }
-      appPathRoutes[normalizedPath].push(entry)
-    })
+
+      appPathRoutes[normalized].push(entry)
+    }
+
     return appPathRoutes
   }
 
@@ -1030,18 +1035,25 @@ export default abstract class Server<ServerOptions extends Options = Options> {
     }
   }
 
+  // WYATT: this is the function we want to add the app route support
   private async renderToResponseWithComponents(
     { req, res, pathname, renderOpts: opts }: RequestContext,
-    { components, query }: FindComponentsResult
+    { components, query, ...result }: FindComponentsResult
   ): Promise<ResponsePayload | null> {
     const is404Page = pathname === '/404'
     const is500Page = pathname === '/500'
-    const isAppPath = components.isAppPath
-    const hasServerProps = !!components.getServerSideProps
-    let hasStaticPaths = !!components.getStaticPaths
 
-    const hasGetInitialProps = !!components.Component?.getInitialProps
-    let isSSG = !!components.getStaticProps
+    const isPagesPath = components.type === LOADED_COMPONENT_TYPE.PAGES
+    const isAppPath = components.type !== LOADED_COMPONENT_TYPE.PAGES
+
+    const hasServerProps = isPagesPath && Boolean(components.getServerSideProps)
+
+    let hasStaticPaths = isPagesPath && Boolean(components.getStaticPaths)
+
+    const hasGetInitialProps =
+      isPagesPath && Boolean(components.Component?.getInitialProps)
+
+    let isSSG = isPagesPath && Boolean(components.getStaticProps)
 
     // Compute the iSSG cache key. We use the rewroteUrl since
     // pages with fallback: false are allowed to be rewritten to
@@ -1057,7 +1069,7 @@ export default abstract class Server<ServerOptions extends Options = Options> {
     if (isAppPath) {
       const pathsResult = await this.getStaticPaths({
         pathname,
-        originalAppPath: components.pathname,
+        originalAppPath: result.pathname,
       })
 
       staticPaths = pathsResult.staticPaths
@@ -1080,10 +1092,10 @@ export default abstract class Server<ServerOptions extends Options = Options> {
 
     // Toggle whether or not this is a Data request
     let isDataReq =
-      !!(
+      Boolean(
         query.__nextDataReq ||
-        (req.headers['x-nextjs-data'] &&
-          (this.serverOptions as any).webServerConfig)
+          (req.headers['x-nextjs-data'] &&
+            (this.serverOptions as any).webServerConfig)
       ) &&
       (isSSG || hasServerProps)
 
@@ -1183,12 +1195,13 @@ export default abstract class Server<ServerOptions extends Options = Options> {
       delete query.amp
     }
 
-    if (opts.supportsDynamicHTML === true) {
+    if (opts.supportsDynamicHTML) {
       const isBotRequest = isBot(req.headers['user-agent'] || '')
       const isSupportedDocument =
-        typeof components.Document?.getInitialProps !== 'function' ||
-        // The built-in `Document` component also supports dynamic HTML for concurrent mode.
-        NEXT_BUILTIN_DOCUMENT in components.Document
+        isPagesPath &&
+        (typeof components.Document?.getInitialProps !== 'function' ||
+          // The built-in `Document` component also supports dynamic HTML for concurrent mode.
+          NEXT_BUILTIN_DOCUMENT in components.Document)
 
       // Disable dynamic HTML in cases that we know it won't be generated,
       // so that we can continue generating a cache key when possible.
@@ -1519,26 +1532,24 @@ export default abstract class Server<ServerOptions extends Options = Options> {
             // We need to generate the fallback on-demand for development.
             else {
               query.__nextFallback = 'true'
-              const result = await doRender()
-              if (!result) {
-                return null
-              }
+              const render = await doRender()
+              if (!render) return null
+
               // Prevent caching this result
-              delete result.revalidate
-              return result
+              delete render.revalidate
+              return render
             }
           }
         }
 
-        const result = await doRender()
-        if (!result) {
-          return null
-        }
+        const render = await doRender()
+        if (!render) return null
+
         return {
-          ...result,
+          ...render,
           revalidate:
-            result.revalidate !== undefined
-              ? result.revalidate
+            render.revalidate !== undefined
+              ? render.revalidate
               : /* default to minimum revalidate (this should be an invariant) */ 1,
         }
       },
@@ -1577,14 +1588,14 @@ export default abstract class Server<ServerOptions extends Options = Options> {
     }
 
     const { revalidate, value: cachedData } = cacheEntry
-    const revalidateOptions: any =
+    const revalidateOptions =
       typeof revalidate !== 'undefined' &&
       (!this.renderOpts.dev || (hasServerProps && !isDataReq))
         ? {
             // When the page is 404 cache-control should not be added unless
             // we are rendering the 404 page for notFound: true which should
             // cache according to revalidate correctly
-            private: isPreviewMode || (is404Page && cachedData),
+            private: isPreviewMode || Boolean(is404Page && cachedData),
             stateful: !isSSG,
             revalidate,
           }
@@ -1734,19 +1745,20 @@ export default abstract class Server<ServerOptions extends Options = Options> {
       params: ctx.renderOpts.params || {},
       isAppPath,
       appPaths,
-      sriEnabled: !!this.nextConfig.experimental.sri?.algorithm,
+      sriEnabled: Boolean(this.nextConfig.experimental.sri?.algorithm),
     })
-    if (result) {
-      try {
-        return await this.renderToResponseWithComponents(ctx, result)
-      } catch (err) {
-        const isNoFallbackError = err instanceof NoFallbackError
+    if (!result) return false
 
-        if (!isNoFallbackError || (isNoFallbackError && bubbleNoFallback)) {
-          throw err
-        }
+    try {
+      return await this.renderToResponseWithComponents(ctx, result)
+    } catch (err) {
+      const isNoFallbackError = err instanceof NoFallbackError
+
+      if (!isNoFallbackError || (isNoFallbackError && bubbleNoFallback)) {
+        throw err
       }
     }
+
     return false
   }
 
@@ -2059,6 +2071,8 @@ export default abstract class Server<ServerOptions extends Options = Options> {
           {
             query,
             components: fallbackComponents,
+            // TODO: verify
+            pathname: '/_error',
           }
         )
       }
@@ -2084,7 +2098,7 @@ export default abstract class Server<ServerOptions extends Options = Options> {
     })
   }
 
-  protected async getFallbackErrorComponents(): Promise<LoadComponentsReturnType | null> {
+  protected async getFallbackErrorComponents(): Promise<LoadedComponents | null> {
     // The development server will provide an implementation for this
     return null
   }

@@ -1,7 +1,6 @@
 import type { __ApiPreviewProps } from '../api-utils'
 import type { CustomRoutes } from '../../lib/load-custom-routes'
 import type { FindComponentsResult } from '../next-server'
-import type { LoadComponentsReturnType } from '../load-components'
 import type { Options as ServerOptions } from '../next-server'
 import type { Params } from '../../shared/lib/router/utils/route-matcher'
 import type { ParsedUrl } from '../../shared/lib/router/utils/parse-url'
@@ -52,7 +51,10 @@ import {
   UnwrapPromise,
   withCoalescedInvoke,
 } from '../../lib/coalesced-function'
-import { loadDefaultErrorComponents } from '../load-components'
+import {
+  loadDefaultErrorComponents,
+  LoadedComponents,
+} from '../load-components'
 import { DecodeError, MiddlewareNotFoundError } from '../../shared/lib/utils'
 import {
   createOriginalStackFrame,
@@ -1446,7 +1448,7 @@ export default class DevServer extends Server {
     }
   }
 
-  protected async getFallbackErrorComponents(): Promise<LoadComponentsReturnType | null> {
+  protected async getFallbackErrorComponents(): Promise<LoadedComponents | null> {
     await this.hotReloader!.buildFallbackError()
     // Build the error page to ensure the fallback is built too.
     // TODO: See if this can be moved into hotReloader or removed.

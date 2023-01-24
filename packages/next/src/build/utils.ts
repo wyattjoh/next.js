@@ -28,7 +28,7 @@ import { getRouteMatcher } from '../shared/lib/router/utils/route-matcher'
 import { isDynamicRoute } from '../shared/lib/router/utils/is-dynamic'
 import escapePathDelimiters from '../shared/lib/router/utils/escape-path-delimiters'
 import { findPageFile } from '../server/lib/find-page-file'
-import { GetStaticPaths, PageConfig, ServerRuntime } from 'next/types'
+import { GetStaticPaths, ServerRuntime } from 'next/types'
 import { BuildManifest } from '../server/get-page-files'
 import { removeTrailingSlash } from '../shared/lib/router/utils/remove-trailing-slash'
 import { UnwrapPromise } from '../lib/coalesced-function'
@@ -37,7 +37,8 @@ import { normalizeLocalePath } from '../shared/lib/i18n/normalize-locale-path'
 import * as Log from './output/log'
 import {
   loadComponents,
-  LoadComponentsReturnType,
+  LoadedComponents,
+  LOADED_COMPONENT_TYPE,
 } from '../server/load-components'
 import { trace } from '../trace'
 import { setHttpClientAndAgentOptions } from '../server/config'
@@ -1224,7 +1225,6 @@ export async function isPageStatic({
   pageRuntime,
   edgeInfo,
   pageType,
-  hasServerComponents,
   originalAppPath,
 }: {
   page: string
@@ -1239,7 +1239,6 @@ export async function isPageStatic({
   edgeInfo?: any
   pageType?: 'pages' | 'app'
   pageRuntime: ServerRuntime
-  hasServerComponents?: boolean
   originalAppPath?: string
 }): Promise<{
   isStatic?: boolean
@@ -1264,56 +1263,57 @@ export async function isPageStatic({
         experimental: { enableUndici },
       })
 
-      let componentsResult: LoadComponentsReturnType
       let prerenderRoutes: Array<string> | undefined
       let encodedPrerenderRoutes: Array<string> | undefined
       let prerenderFallback: boolean | 'blocking' | undefined
       let appConfig: AppConfig = {}
 
-      if (isEdgeRuntime(pageRuntime)) {
-        const runtime = await getRuntimeContext({
-          paths: edgeInfo.files.map((file: string) => path.join(distDir, file)),
-          env: edgeInfo.env,
-          edgeFunctionEntry: {
-            ...edgeInfo,
-            wasm: (edgeInfo.wasm ?? []).map((binding: AssetBinding) => ({
-              ...binding,
-              filePath: path.join(distDir, binding.filePath),
-            })),
-          },
-          name: edgeInfo.name,
-          useCache: true,
-          distDir,
-        })
-        const mod =
-          runtime.context._ENTRIES[`middleware_${edgeInfo.name}`].ComponentMod
+      const componentsResult = await (async (): Promise<LoadedComponents> => {
+        if (isEdgeRuntime(pageRuntime)) {
+          const runtime = await getRuntimeContext({
+            paths: edgeInfo.files.map((file: string) =>
+              path.join(distDir, file)
+            ),
+            env: edgeInfo.env,
+            edgeFunctionEntry: {
+              ...edgeInfo,
+              wasm: (edgeInfo.wasm ?? []).map((binding: AssetBinding) => ({
+                ...binding,
+                filePath: path.join(distDir, binding.filePath),
+              })),
+            },
+            name: edgeInfo.name,
+            useCache: true,
+            distDir,
+          })
+          const mod =
+            runtime.context._ENTRIES[`middleware_${edgeInfo.name}`].ComponentMod
 
-        componentsResult = {
-          Component: mod.default,
-          ComponentMod: mod,
-          pageConfig: mod.config || {},
-          // @ts-expect-error this is not needed during require
-          buildManifest: {},
-          reactLoadableManifest: {},
-          getServerSideProps: mod.getServerSideProps,
-          getStaticPaths: mod.getStaticPaths,
-          getStaticProps: mod.getStaticProps,
+          return {
+            type: LOADED_COMPONENT_TYPE.PAGES,
+            Component: mod.default,
+            ComponentMod: mod,
+            pageConfig: mod.config || {},
+            // @ts-expect-error this is not needed during require
+            buildManifest: {},
+            reactLoadableManifest: {},
+            getServerSideProps: mod.getServerSideProps,
+            getStaticPaths: mod.getStaticPaths,
+            getStaticProps: mod.getStaticProps,
+          }
+        } else {
+          return await loadComponents({
+            pathname: originalAppPath || page,
+            distDir,
+            isAppPath: pageType === 'app',
+          })
         }
-      } else {
-        componentsResult = await loadComponents({
-          distDir,
-          pathname: originalAppPath || page,
-          hasServerComponents: !!hasServerComponents,
-          isAppPath: pageType === 'app',
-        })
-      }
+      })()
+
       const Comp = componentsResult.Component || {}
-      let staticPathsResult:
-        | UnwrapPromise<ReturnType<GetStaticPaths>>
-        | undefined
 
       if (pageType === 'app') {
-        const tree = componentsResult.ComponentMod.tree
+        const tree = componentsResult.ComponentModule.tree
         const generateParams = await collectGenerateParams(tree)
 
         appConfig = generateParams.reduce(
@@ -1375,38 +1375,34 @@ export async function isPageStatic({
         }
       }
 
-      const hasGetInitialProps = !!(Comp as any).getInitialProps
-      const hasStaticProps = !!componentsResult.getStaticProps
-      const hasStaticPaths = !!componentsResult.getStaticPaths
-      const hasServerProps = !!componentsResult.getServerSideProps
-      const hasLegacyServerProps = !!(await componentsResult.ComponentMod
-        .unstable_getServerProps)
-      const hasLegacyStaticProps = !!(await componentsResult.ComponentMod
-        .unstable_getStaticProps)
-      const hasLegacyStaticPaths = !!(await componentsResult.ComponentMod
-        .unstable_getStaticPaths)
-      const hasLegacyStaticParams = !!(await componentsResult.ComponentMod
-        .unstable_getStaticParams)
+      const isPagesPath = componentsResult.type === LOADED_COMPONENT_TYPE.PAGES
+      const hasGetInitialProps = Boolean((Comp as any).getInitialProps)
+      const hasStaticProps =
+        isPagesPath && Boolean(componentsResult.getStaticProps)
+      const hasStaticPaths =
+        isPagesPath && Boolean(componentsResult.getStaticPaths)
+      const hasServerProps =
+        isPagesPath && Boolean(componentsResult.getServerSideProps)
 
-      if (hasLegacyStaticParams) {
+      if (await componentsResult.ComponentModule.unstable_getStaticParams) {
         throw new Error(
           `unstable_getStaticParams was replaced with getStaticPaths. Please update your code.`
         )
       }
 
-      if (hasLegacyStaticPaths) {
+      if (await componentsResult.ComponentModule.unstable_getStaticPaths) {
         throw new Error(
           `unstable_getStaticPaths was replaced with getStaticPaths. Please update your code.`
         )
       }
 
-      if (hasLegacyStaticProps) {
+      if (await componentsResult.ComponentModule.unstable_getStaticProps) {
         throw new Error(
           `unstable_getStaticProps was replaced with getStaticProps. Please update your code.`
         )
       }
 
-      if (hasLegacyServerProps) {
+      if (await componentsResult.ComponentModule.unstable_getServerProps) {
         throw new Error(
           `unstable_getServerProps was replaced with getServerSideProps. Please update your code.`
         )
@@ -1427,6 +1423,7 @@ export async function isPageStatic({
       }
 
       const pageIsDynamic = isDynamicRoute(page)
+
       // A page cannot have static parameters if it is not a dynamic page.
       if (hasStaticProps && hasStaticPaths && !pageIsDynamic) {
         throw new Error(
@@ -1442,7 +1439,7 @@ export async function isPageStatic({
         )
       }
 
-      if ((hasStaticProps && hasStaticPaths) || staticPathsResult) {
+      if (hasStaticProps && hasStaticPaths) {
         ;({
           paths: prerenderRoutes,
           fallback: prerenderFallback,
@@ -1452,25 +1449,27 @@ export async function isPageStatic({
           locales,
           defaultLocale,
           configFileName,
-          staticPathsResult,
-          getStaticPaths: componentsResult.getStaticPaths!,
+          getStaticPaths: componentsResult.getStaticPaths,
         }))
       }
 
       const isNextImageImported = (globalThis as any).__NEXT_IMAGE_IMPORTED
-      const config: PageConfig = componentsResult.pageConfig
+      const config =
+        componentsResult.type === LOADED_COMPONENT_TYPE.PAGES
+          ? componentsResult.config
+          : null
       return {
         isStatic: !hasStaticProps && !hasGetInitialProps && !hasServerProps,
-        isHybridAmp: config.amp === 'hybrid',
-        isAmpOnly: config.amp === true,
+        isHybridAmp: config?.amp === 'hybrid',
+        isAmpOnly: config?.amp === true,
         prerenderRoutes,
         prerenderFallback,
         encodedPrerenderRoutes,
         hasStaticProps,
         hasServerProps,
         isNextImageImported,
-        traceIncludes: config.unstable_includeFiles || [],
-        traceExcludes: config.unstable_excludeFiles || [],
+        traceIncludes: config?.unstable_includeFiles || [],
+        traceExcludes: config?.unstable_excludeFiles || [],
         appConfig,
       }
     })
@@ -1492,12 +1491,11 @@ export async function hasCustomGetInitialProps(
   require('../shared/lib/runtime-config').setConfig(runtimeEnvConfig)
 
   const components = await loadComponents({
-    distDir,
     pathname: page,
-    hasServerComponents: false,
+    distDir,
     isAppPath: false,
   })
-  let mod = components.ComponentMod
+  let mod = components.ComponentModule
 
   if (checkingApp) {
     mod = (await mod._app) || mod.default || mod
@@ -1515,12 +1513,11 @@ export async function getNamedExports(
 ): Promise<Array<string>> {
   require('../shared/lib/runtime-config').setConfig(runtimeEnvConfig)
   const components = await loadComponents({
-    distDir,
     pathname: page,
-    hasServerComponents: false,
+    distDir,
     isAppPath: false,
   })
-  let mod = components.ComponentMod
+  let mod = components.ComponentModule
 
   return Object.keys(mod)
 }

@@ -6,7 +6,7 @@ import {
   buildStaticPaths,
   collectGenerateParams,
 } from '../../build/utils'
-import { loadComponents } from '../load-components'
+import { loadComponents, LOADED_COMPONENT_TYPE } from '../load-components'
 import { setHttpClientAndAgentOptions } from '../config'
 import {
   loadRequireHook,
@@ -37,7 +37,7 @@ export async function loadStaticPaths({
   enableUndici,
   locales,
   defaultLocale,
-  isAppPath,
+  isAppPath = false,
   originalAppPath,
 }: {
   distDir: string
@@ -70,11 +70,13 @@ export async function loadStaticPaths({
   const components = await loadComponents({
     distDir,
     pathname: originalAppPath || pathname,
-    hasServerComponents: false,
-    isAppPath: !!isAppPath,
+    isAppPath,
   })
 
-  if (!components.getStaticPaths && !isAppPath) {
+  if (
+    components.type === LOADED_COMPONENT_TYPE.PAGES &&
+    !components.getStaticPaths
+  ) {
     // we shouldn't get to this point since the worker should
     // only be called for SSG pages with getStaticPaths
     throw new Error(
@@ -83,9 +85,9 @@ export async function loadStaticPaths({
   }
   workerWasUsed = true
 
-  if (isAppPath) {
+  if (components.type === LOADED_COMPONENT_TYPE.APP_PAGE) {
     const generateParams = await collectGenerateParams(
-      components.ComponentMod.tree
+      components.ComponentModule.tree
     )
     return buildAppStaticPaths({
       page: pathname,

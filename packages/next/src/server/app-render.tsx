@@ -1,5 +1,4 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http'
-import type { LoadComponentsReturnType } from './load-components'
 import type { ServerRuntime } from '../../types'
 import type { FontLoaderManifest } from '../build/webpack/plugins/font-loader-manifest-plugin'
 
@@ -50,6 +49,7 @@ import { formatServerError } from '../lib/format-server-error'
 import type { RequestAsyncStorage } from '../client/components/request-async-storage'
 import { runWithRequestAsyncStorage } from './run-with-request-async-storage'
 import { runWithStaticGenerationAsyncStorage } from './run-with-static-generation-async-storage'
+import { LoadedComponents, LOADED_COMPONENT_TYPE } from './load-components'
 
 const isEdgeRuntime = process.env.NEXT_RUNTIME === 'edge'
 
@@ -178,7 +178,6 @@ export type RenderOptsPartial = {
   serverCSSManifest?: FlightCSSManifest
   supportsDynamicHTML?: boolean
   runtime?: ServerRuntime
-  serverComponents?: boolean
   assetPrefix?: string
   fontLoaderManifest?: FontLoaderManifest
   isBot?: boolean
@@ -186,7 +185,7 @@ export type RenderOptsPartial = {
   isRevalidate?: boolean
 }
 
-export type RenderOpts = LoadComponentsReturnType & RenderOptsPartial
+export type RenderOpts = LoadedComponents & RenderOptsPartial
 
 /**
  * Flight Response is always set to application/octet-stream to ensure it does not get interpreted as HTML.
@@ -897,23 +896,27 @@ export async function renderToHTMLOrFlight(
   )
 
   const {
-    buildManifest,
-    subresourceIntegrityManifest,
     serverComponentManifest,
     serverCSSManifest = {},
-    ComponentMod,
+    buildManifest,
+    ComponentModule,
     dev,
     fontLoaderManifest,
     supportsDynamicHTML,
   } = renderOpts
 
-  patchFetch(ComponentMod)
+  const isPagesPath = renderOpts.type === LOADED_COMPONENT_TYPE.PAGES
+
+  const subresourceIntegrityManifest =
+    (isPagesPath && renderOpts.subresourceIntegrityManifest) || null
+
+  patchFetch(ComponentModule)
   const generateStaticHTML = supportsDynamicHTML !== true
 
   const staticGenerationAsyncStorage: StaticGenerationAsyncStorage =
-    ComponentMod.staticGenerationAsyncStorage
+    ComponentModule.staticGenerationAsyncStorage
   const requestAsyncStorage: RequestAsyncStorage =
-    ComponentMod.requestAsyncStorage
+    ComponentModule.requestAsyncStorage
 
   // we wrap the render in an AsyncLocalStorage context
   const wrappedRender = async () => {
@@ -947,14 +950,14 @@ export async function renderToHTMLOrFlight(
     /**
      * The tree created in next-app-loader that holds component segments and modules
      */
-    const loaderTree: LoaderTree = ComponentMod.tree
+    const loaderTree: LoaderTree = ComponentModule.tree
 
     stripInternalQueries(query)
 
     const LayoutRouter =
-      ComponentMod.LayoutRouter as typeof import('../client/components/layout-router').default
+      ComponentModule.LayoutRouter as typeof import('../client/components/layout-router').default
     const RenderFromTemplateContext =
-      ComponentMod.RenderFromTemplateContext as typeof import('../client/components/render-from-template-context').default
+      ComponentModule.RenderFromTemplateContext as typeof import('../client/components/render-from-template-context').default
 
     /**
      * Server Context is specifically only available in Server Components.
@@ -1105,7 +1108,7 @@ export async function renderToHTMLOrFlight(
     // More info: https://github.com/vercel/next.js/issues/41018
     const serverCSSForEntries = getServerCSSForEntries(
       serverCSSManifest!,
-      ComponentMod.pages
+      ComponentModule.pages
     )
 
     const assetPrefix = renderOpts.assetPrefix || ''
@@ -1268,7 +1271,7 @@ export async function renderToHTMLOrFlight(
           defaultRevalidate === 0
         ) {
           const { DynamicServerError } =
-            ComponentMod.serverHooks as typeof import('../client/components/hooks-server-context')
+            ComponentModule.serverHooks as typeof import('../client/components/hooks-server-context')
 
           throw new DynamicServerError(`revalidate: 0 configured ${segment}`)
         }
@@ -1684,7 +1687,7 @@ export async function renderToHTMLOrFlight(
 
       // For app dir, use the bundled version of Fizz renderer (renderToReadableStream)
       // which contains the subset React.
-      const readable = ComponentMod.renderToReadableStream(
+      const readable = ComponentModule.renderToReadableStream(
         flightData,
         serverComponentManifest,
         {
@@ -1704,11 +1707,11 @@ export async function renderToHTMLOrFlight(
 
     // AppRouter is provided by next-app-loader
     const AppRouter =
-      ComponentMod.AppRouter as typeof import('../client/components/app-router').default
+      ComponentModule.AppRouter as typeof import('../client/components/app-router').default
 
     const GlobalError = interopDefault(
       /** GlobalError can be either the default error boundary or the overwritten app/global-error.js **/
-      ComponentMod.GlobalError as typeof import('../client/components/error-boundary').default
+      ComponentModule.GlobalError as typeof import('../client/components/error-boundary').default
     )
 
     let serverComponentsInlinedTransformStream: TransformStream<
@@ -1773,7 +1776,7 @@ export async function renderToHTMLOrFlight(
           </AppRouter>
         )
       },
-      ComponentMod,
+      ComponentModule,
       serverComponentsRenderOpts,
       serverComponentsErrorHandler,
       nonce

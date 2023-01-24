@@ -1468,7 +1468,6 @@ export default async function build(
                           pageRuntime,
                           edgeInfo,
                           pageType,
-                          hasServerComponents: !!appDir,
                         })
                       }
                     )

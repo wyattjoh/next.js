@@ -14,7 +14,10 @@ import { loadRequireHook } from '../build/webpack/require-hook'
 import { extname, join, dirname, sep } from 'path'
 import fs, { promises } from 'fs'
 import AmpHtmlValidator from 'next/dist/compiled/amphtml-validator'
-import { loadComponents } from '../server/load-components'
+import {
+  loadComponents,
+  LOADED_COMPONENT_TYPE,
+} from '../server/load-components'
 import { isDynamicRoute } from '../shared/lib/router/utils/is-dynamic'
 import { getRouteMatcher } from '../shared/lib/router/utils/route-matcher'
 import { getRouteRegex } from '../shared/lib/router/utils/route-regex'
@@ -122,7 +125,6 @@ export default async function exportPage({
   optimizeCss,
   disableOptimizedLoading,
   httpAgentOptions,
-  serverComponents,
   enableUndici,
 }: ExportPageInput): Promise<ExportPageResults> {
   setHttpClientAndAgentOptions({
@@ -291,11 +293,12 @@ export default async function exportPage({
       }
 
       const components = await loadComponents({
-        distDir,
         pathname: page,
-        hasServerComponents: !!serverComponents,
+        distDir,
         isAppPath: isAppDir,
       })
+      const isPagesPath = components.type === LOADED_COMPONENT_TYPE.PAGES
+
       curRenderOpts = {
         ...components,
         ...renderOpts,
@@ -382,25 +385,29 @@ export default async function exportPage({
       }
 
       const ampState = {
-        ampFirst: components.pageConfig?.amp === true,
+        ampFirst: isPagesPath && components.config?.amp === true,
         hasQuery: Boolean(query.amp),
-        hybrid: components.pageConfig?.amp === 'hybrid',
+        hybrid: isPagesPath && components.config?.amp === 'hybrid',
       }
       inAmpMode = isInAmpMode(ampState)
       hybridAmp = ampState.hybrid
 
-      if (components.getServerSideProps) {
+      if (isPagesPath && components.getServerSideProps) {
         throw new Error(`Error for page ${page}: ${SERVER_PROPS_EXPORT_ERROR}`)
       }
 
       // for non-dynamic SSG pages we should have already
       // prerendered the file
-      if (renderedDuringBuild(components.getStaticProps)) {
+      if (isPagesPath && renderedDuringBuild(components.getStaticProps)) {
         return { ...results, duration: Date.now() - start }
       }
 
       // TODO: de-dupe the logic here between serverless and server mode
-      if (components.getStaticProps && !htmlFilepath.endsWith('.html')) {
+      if (
+        isPagesPath &&
+        components.getStaticProps &&
+        !htmlFilepath.endsWith('.html')
+      ) {
         // make sure it ends with .html if the name contains a dot
         htmlFilepath += '.html'
         htmlFilename += '.html'

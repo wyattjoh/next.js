@@ -4,7 +4,6 @@ import type RenderResult from './render-result'
 import type { NextParsedUrlQuery, NextUrlWithParsedQuery } from './request-meta'
 import type { Params } from '../shared/lib/router/utils/route-matcher'
 import type { PayloadOptions } from './send-payload'
-import type { LoadComponentsReturnType } from './load-components'
 import { Route, RouteResultState, RouterOptions } from './router'
 import type { BaseNextRequest, BaseNextResponse } from './base-http'
 import type { UrlWithParsedQuery } from 'url'
@@ -26,14 +25,13 @@ import {
   normalizeVercelUrl,
 } from '../build/webpack/loaders/next-serverless-loader/utils'
 import { getNamedRouteRegex } from '../shared/lib/router/utils/route-regex'
+import type { LoadedComponents } from './load-components'
 
 interface WebServerOptions extends Options {
   webServerConfig: {
     page: string
     pagesType: 'app' | 'pages' | 'root'
-    loadComponent: (
-      pathname: string
-    ) => Promise<LoadComponentsReturnType | null>
+    loadComponent: (pathname: string) => Promise<LoadedComponents | null>
     extendRenderOpts: Partial<BaseServer['renderOpts']> &
       Pick<BaseServer['renderOpts'], 'buildId'>
     pagesRenderToHTML?: typeof import('./render').renderToHTML
@@ -432,6 +430,7 @@ export default class NextWebServer extends BaseServer<WebServerOptions> {
         ...(query || {}),
         ...(params || {}),
       },
+      pathname,
       components: result,
     }
   }

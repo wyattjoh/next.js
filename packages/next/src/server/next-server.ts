@@ -77,7 +77,7 @@ import BaseServer, {
 import { getMaybePagePath, getPagePath, requireFontManifest } from './require'
 import { denormalizePagePath } from '../shared/lib/page-path/denormalize-page-path'
 import { normalizePagePath } from '../shared/lib/page-path/normalize-page-path'
-import { loadComponents } from './load-components'
+import { loadComponents, LOADED_COMPONENT_TYPE } from './load-components'
 import isError, { getProperError } from '../lib/is-error'
 import { FontManifest } from './font-utils'
 import { splitCookiesString, toNodeHeaders } from './web/utils'
@@ -243,15 +243,13 @@ export default class NextNodeServer extends BaseServer {
       // pre-warm _document and _app as these will be
       // needed for most requests
       loadComponents({
-        distDir: this.distDir,
         pathname: '/_document',
-        hasServerComponents: false,
+        distDir: this.distDir,
         isAppPath: false,
       }).catch(() => {})
       loadComponents({
-        distDir: this.distDir,
         pathname: '/_app',
-        hasServerComponents: false,
+        distDir: this.distDir,
         isAppPath: false,
       }).catch(() => {})
     }
@@ -336,11 +334,13 @@ export default class NextNodeServer extends BaseServer {
   }
 
   protected async hasPage(pathname: string): Promise<boolean> {
-    return !!getMaybePagePath(
-      pathname,
-      this.distDir,
-      this.nextConfig.i18n?.locales,
-      this.hasAppDir
+    return Boolean(
+      getMaybePagePath(
+        pathname,
+        this.distDir,
+        this.nextConfig.i18n?.locales,
+        this.hasAppDir
+      )
     )
   }
 
@@ -768,20 +768,18 @@ export default class NextNodeServer extends BaseServer {
     const edgeFunctions = this.getEdgeFunctions()
 
     for (const item of edgeFunctions) {
-      if (item.page === page) {
-        const handledAsEdgeFunction = await this.runEdgeFunction({
-          req,
-          res,
-          query,
-          params,
-          page,
-          appPaths: null,
-        })
+      if (item.page !== page) continue
 
-        if (handledAsEdgeFunction) {
-          return true
-        }
-      }
+      const handledAsEdgeFunction = await this.runEdgeFunction({
+        req,
+        res,
+        query,
+        params,
+        page,
+        appPaths: null,
+      })
+
+      if (handledAsEdgeFunction) return true
     }
 
     const pageModule = await require(builtPagePath)
@@ -812,6 +810,7 @@ export default class NextNodeServer extends BaseServer {
       this.renderOpts.dev,
       page
     )
+
     return true
   }
 
@@ -829,23 +828,29 @@ export default class NextNodeServer extends BaseServer {
     renderOpts.serverCSSManifest = this.serverCSSManifest
     renderOpts.fontLoaderManifest = this.fontLoaderManifest
 
-    if (this.hasAppDir && renderOpts.isAppPath) {
-      return appRenderToHTMLOrFlight(
-        req.originalRequest,
-        res.originalResponse,
-        pathname,
-        query,
-        renderOpts
-      )
+    switch (renderOpts.type) {
+      case LOADED_COMPONENT_TYPE.APP_PAGE:
+        return appRenderToHTMLOrFlight(
+          req.originalRequest,
+          res.originalResponse,
+          pathname,
+          query,
+          renderOpts
+        )
+      case LOADED_COMPONENT_TYPE.PAGES:
+        return renderToHTML(
+          req.originalRequest,
+          res.originalResponse,
+          pathname,
+          query,
+          renderOpts
+        )
+      default:
+        throw new Error(
+          // @ts-expect-error -- should be exhaustive
+          `Invariant: unexpected render type requested: "${renderOpts.type}"`
+        )
     }
-
-    return renderToHTML(
-      req.originalRequest,
-      res.originalResponse,
-      pathname,
-      query,
-      renderOpts
-    )
   }
 
   protected streamResponseChunk(res: NodeNextResponse, chunk: any) {
@@ -889,7 +894,7 @@ export default class NextNodeServer extends BaseServer {
     ctx: RequestContext,
     bubbleNoFallback: boolean
   ) {
-    const edgeFunctions = this.getEdgeFunctions() || []
+    const edgeFunctions = this.getEdgeFunctions()
     if (edgeFunctions.length) {
       const appPaths = this.getOriginalAppPaths(ctx.pathname)
       const isAppPath = Array.isArray(appPaths)
@@ -901,23 +906,27 @@ export default class NextNodeServer extends BaseServer {
       }
 
       for (const item of edgeFunctions) {
-        if (item.page === page) {
-          await this.runEdgeFunction({
-            req: ctx.req,
-            res: ctx.res,
-            query: ctx.query,
-            params: ctx.renderOpts.params,
-            page,
-            appPaths,
-          })
-          return null
-        }
+        if (item.page !== page) continue
+
+        await this.runEdgeFunction({
+          req: ctx.req,
+          res: ctx.res,
+          query: ctx.query,
+          params: ctx.renderOpts.params,
+          page,
+          appPaths,
+        })
+
+        return null
       }
     }
 
     return super.renderPageComponent(ctx, bubbleNoFallback)
   }
 
+  // WYATT: this function is responsible for finding the "components" for a
+  // particular pathname. We could use this for collecting instead the "module"
+  // that should be used to render. This could be crafted as a Page/Route.
   protected async findPageComponents({
     pathname,
     query,
@@ -931,7 +940,7 @@ export default class NextNodeServer extends BaseServer {
   }): Promise<FindComponentsResult | null> {
     const paths: string[] = [pathname]
     if (query.amp) {
-      // try serving a static AMP version first
+      // Try serving a static AMP version first.
       paths.unshift(
         (isAppPath ? normalizeAppPath(pathname) : normalizePagePath(pathname)) +
           '.amp'
@@ -951,7 +960,6 @@ export default class NextNodeServer extends BaseServer {
         const components = await loadComponents({
           distDir: this.distDir,
           pathname: pagePath,
-          hasServerComponents: !!this.renderOpts.serverComponents,
           isAppPath,
         })
 
@@ -966,15 +974,18 @@ export default class NextNodeServer extends BaseServer {
         }
 
         return {
+          // TODO: fix case
+          pathname: pagePath,
           components,
           query: {
-            ...(components.getStaticProps
-              ? ({
+            ...(components.type === LOADED_COMPONENT_TYPE.PAGES &&
+            components.getStaticProps
+              ? {
                   amp: query.amp,
                   __nextDataReq: query.__nextDataReq,
                   __nextLocale: query.__nextLocale,
                   __nextDefaultLocale: query.__nextDefaultLocale,
-                } as NextParsedUrlQuery)
+                }
               : query),
             // For appDir params is excluded.
             ...((isAppPath ? {} : params) || {}),
@@ -1617,7 +1628,10 @@ export default class NextNodeServer extends BaseServer {
 
   /** Returns the middleware routing item if there is one. */
   protected getMiddleware(): MiddlewareRoutingItem | undefined {
+    if (this.minimalMode) return
+
     const manifest = this.getMiddlewareManifest()
+
     const middleware = manifest?.middleware?.['/']
     if (!middleware) return
 
@@ -1629,12 +1643,10 @@ export default class NextNodeServer extends BaseServer {
 
   protected getEdgeFunctions(): RoutingItem[] {
     const manifest = this.getMiddlewareManifest()
-    if (!manifest) {
-      return []
-    }
+    if (!manifest) return []
 
-    return Object.keys(manifest.functions).map((page) => ({
-      match: getEdgeMatcher(manifest.functions[page]),
+    return Object.entries(manifest.functions).map(([page, info]) => ({
+      match: getEdgeMatcher(info),
       page,
     }))
   }

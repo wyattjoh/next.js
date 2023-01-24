@@ -17,7 +17,11 @@ import type { ImageConfigComplete } from '../shared/lib/image-config'
 import type { Redirect } from '../lib/load-custom-routes'
 import type { NextApiRequestCookies, __ApiPreviewProps } from './api-utils'
 import type { FontManifest, FontConfig } from './font-utils'
-import type { LoadComponentsReturnType, ManifestItem } from './load-components'
+import {
+  LoadedComponents,
+  LOADED_COMPONENT_TYPE,
+  ManifestItem,
+} from './load-components'
 import type {
   GetServerSideProps,
   GetStaticProps,
@@ -264,7 +268,7 @@ export type RenderOptsPartial = {
   largePageDataBytes?: number
 }
 
-export type RenderOpts = LoadComponentsReturnType & RenderOptsPartial
+export type RenderOpts = LoadedComponents & RenderOptsPartial
 
 const invalidKeysMsg = (
   methodName: 'getServerSideProps' | 'getStaticProps',
@@ -386,13 +390,9 @@ export async function renderToHTML(
     err,
     dev = false,
     ampPath = '',
-    pageConfig = {},
     buildManifest,
     reactLoadableManifest,
     ErrorDebug,
-    getStaticProps,
-    getStaticPaths,
-    getServerSideProps,
     isDataReq,
     params,
     previewProps,
@@ -401,10 +401,18 @@ export async function renderToHTML(
     supportsDynamicHTML,
     images,
     runtime: globalRuntime,
-    App,
   } = renderOpts
 
-  let Document = renderOpts.Document
+  const isPagesPath = renderOpts.type === LOADED_COMPONENT_TYPE.PAGES
+
+  const {
+    config: pageConfig = {},
+    App = null,
+    getStaticProps = null,
+    getStaticPaths = null,
+    getServerSideProps = null,
+  } = isPagesPath ? renderOpts : {}
+  let { Document = null } = isPagesPath ? renderOpts : {}
 
   // Component will be wrapped by ServerComponentWrapper for RSC
   let Component: React.ComponentType<{}> | ((props: any) => JSX.Element) =
@@ -416,7 +424,7 @@ export async function renderToHTML(
     Uint8Array
   > | null = null
 
-  const isFallback = !!query.__nextFallback
+  const isFallback = Boolean(query.__nextFallback)
   const notFoundSrcPage = query.__nextNotFoundSrcPage
 
   // next internal queries should be stripped out
@@ -425,9 +433,9 @@ export async function renderToHTML(
   const isSSG = !!getStaticProps
   const isBuildTimeSSG = isSSG && renderOpts.nextExport
   const defaultAppGetInitialProps =
-    App.getInitialProps === (App as any).origGetInitialProps
+    App?.getInitialProps === (App as any).origGetInitialProps
 
-  const hasPageGetInitialProps = !!(Component as any)?.getInitialProps
+  const hasPageGetInitialProps = Boolean((Component as any)?.getInitialProps)
   const hasPageScripts = (Component as any)?.unstable_scriptLoader
 
   const pageIsDynamic = isDynamicRoute(pathname)
@@ -1124,7 +1132,7 @@ export async function renderToHTML(
       Document as any
     )[NEXT_BUILTIN_DOCUMENT]
 
-    if (process.env.NEXT_RUNTIME === 'edge' && Document.getInitialProps) {
+    if (process.env.NEXT_RUNTIME === 'edge' && Document?.getInitialProps) {
       // In the Edge runtime, `Document.getInitialProps` isn't supported.
       // We throw an error here if it's customized.
       if (!BuiltinFunctionalDocument) {
@@ -1134,7 +1142,7 @@ export async function renderToHTML(
       }
     }
 
-    if (process.env.NEXT_RUNTIME === 'edge' && Document.getInitialProps) {
+    if (process.env.NEXT_RUNTIME === 'edge' && Document?.getInitialProps) {
       if (BuiltinFunctionalDocument) {
         Document = BuiltinFunctionalDocument
       } else {
@@ -1275,7 +1283,7 @@ export async function renderToHTML(
     }
 
     const hasDocumentGetInitialProps = !(
-      process.env.NEXT_RUNTIME === 'edge' || !Document.getInitialProps
+      process.env.NEXT_RUNTIME === 'edge' || !Document?.getInitialProps
     )
 
     let bodyResult: (s: string) => Promise<ReadableStream<Uint8Array>>

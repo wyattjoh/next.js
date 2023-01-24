@@ -2,7 +2,10 @@ import type { NextConfig } from '../../../../server/config-shared'
 
 import type { DocumentType, AppType } from '../../../../shared/lib/utils'
 import type { BuildManifest } from '../../../../server/get-page-files'
-import type { ReactLoadableManifest } from '../../../../server/load-components'
+import {
+  LOADED_COMPONENT_TYPE,
+  ReactLoadableManifest,
+} from '../../../../server/load-components'
 import type { FontLoaderManifest } from '../../plugins/font-loader-manifest-plugin'
 
 import WebServer from '../../../../server/web-server'
@@ -54,6 +57,7 @@ export function getRender({
 }) {
   const isAppPath = pagesType === 'app'
   const baseLoadComponentResult = {
+    type: LOADED_COMPONENT_TYPE.PAGES as const,
     dev,
     buildManifest,
     reactLoadableManifest,
@@ -86,11 +90,11 @@ export function getRender({
           return {
             ...baseLoadComponentResult,
             Component: pageMod.default,
-            pageConfig: pageMod.config || {},
+            config: pageMod.config || {},
             getStaticProps: pageMod.getStaticProps,
             getServerSideProps: pageMod.getServerSideProps,
             getStaticPaths: pageMod.getStaticPaths,
-            ComponentMod: pageMod,
+            ComponentModule: pageMod,
             pathname,
           }
         }
@@ -100,11 +104,11 @@ export function getRender({
           return {
             ...baseLoadComponentResult,
             Component: error500Mod.default,
-            pageConfig: error500Mod.config || {},
+            config: error500Mod.config || {},
             getStaticProps: error500Mod.getStaticProps,
             getServerSideProps: error500Mod.getServerSideProps,
             getStaticPaths: error500Mod.getStaticPaths,
-            ComponentMod: error500Mod,
+            ComponentModule: error500Mod,
             pathname,
           }
         }
@@ -113,11 +117,11 @@ export function getRender({
           return {
             ...baseLoadComponentResult,
             Component: errorMod.default,
-            pageConfig: errorMod.config || {},
+            config: errorMod.config || {},
             getStaticProps: errorMod.getStaticProps,
             getServerSideProps: errorMod.getServerSideProps,
             getStaticPaths: errorMod.getStaticPaths,
-            ComponentMod: errorMod,
+            ComponentModule: errorMod,
             pathname,
           }
         }
