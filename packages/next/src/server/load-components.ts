@@ -27,23 +27,6 @@ export type ManifestItem = {
 
 export type ReactLoadableManifest = { [moduleId: string]: ManifestItem }
 
-// export type LoadComponentsReturnType = {
-//   Component: NextComponentType
-//   pageConfig: PageConfig
-//   buildManifest: BuildManifest
-//   subresourceIntegrityManifest?: Record<string, string>
-//   reactLoadableManifest: ReactLoadableManifest
-//   serverComponentManifest?: any
-//   Document: DocumentType
-//   App: AppType
-//   getStaticProps?: GetStaticProps
-//   getStaticPaths?: GetStaticPaths
-//   getServerSideProps?: GetServerSideProps
-//   ComponentMod: any
-//   isAppPath?: boolean
-//   pathname: string
-// }
-
 export enum LOADED_COMPONENT_TYPE {
   PAGES,
   APP_PAGE,
@@ -82,20 +65,19 @@ export async function loadDefaultErrorComponents(
   distDir: string
 ): Promise<LoadedComponents> {
   const Document = interopDefault(require('next/dist/pages/_document'))
-  const AppMod = require('next/dist/pages/_app')
-  const App = interopDefault(AppMod)
+  const App = interopDefault(require('next/dist/pages/_app'))
   const ComponentModule = require('next/dist/pages/_error')
   const Component = interopDefault(ComponentModule)
 
   return {
     type: LOADED_COMPONENT_TYPE.PAGES,
+    Component,
+    ComponentModule,
     App,
     Document,
-    Component,
     config: {},
     buildManifest: require(join(distDir, `fallback-${BUILD_MANIFEST}`)),
     reactLoadableManifest: {},
-    ComponentModule,
   }
 }
 
@@ -116,8 +98,6 @@ async function loadPagesComponents(
     Component: interopDefault(ComponentModule),
     ComponentModule,
     config: ComponentModule.config ?? {},
-    // buildManifest: require(join(distDir, BUILD_MANIFEST)),
-    // reactLoadableManifest: require(join(distDir, REACT_LOADABLE_MANIFEST)),
     getServerSideProps: ComponentModule.getServerSideProps,
     getStaticProps: ComponentModule.getStaticProps,
     getStaticPaths: ComponentModule.getStaticPaths,
@@ -134,8 +114,6 @@ async function loadAppPageComponents(
     type: LOADED_COMPONENT_TYPE.APP_PAGE,
     Component: interopDefault(ComponentModule),
     ComponentModule,
-    // buildManifest: require(join(distDir, BUILD_MANIFEST)),
-    // reactLoadableManifest: require(join(distDir, REACT_LOADABLE_MANIFEST)),
     serverComponentManifest: require(join(
       distDir,
       SERVER_DIRECTORY,
